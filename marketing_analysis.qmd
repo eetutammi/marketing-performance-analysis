@@ -1,0 +1,917 @@
+---
+title: "Marketing Performance Analysis"
+author: "Eetu Tammi"
+format: html
+editor: visual
+---
+
+## Introduction
+
+This project analyzes the relationship between marketing spending and weekly revenue using a simulated marketing dataset.
+
+The analysis focuses on five marketing channels: TV, OOH, Print, Facebook, and Search. It also considers competitor sales and seasonality.
+
+The first research question is:
+
+**How is marketing spending associated with weekly revenue?**
+
+The analysis examines marketing spend by channel, correlations between marketing activity and revenue, seasonality, and a multiple linear regression model.
+
+The second research question is:
+
+**How well can revenue be predicted using marketing activity, competitor sales, and seasonality?**
+
+The model is evaluated using a chronological train/test split, with observations before 2019 used for training and 2019 observations used as the test set.
+
+The third research question is:
+
+**Do marketing activities from previous weeks improve revenue predictions?**
+
+One- and two-week lags are added to each marketing channel and compared with the simpler baseline model using MAE, RMSE, and MAPE.
+
+## Data
+
+The analysis uses Meta's simulated weekly marketing dataset.
+
+The dataset contains weekly observations of:
+
+- revenue
+- TV spend
+- OOH spend
+- Print spend
+- Facebook spend
+- Search spend
+- competitor sales
+- events
+- newsletter activity
+
+The analysis focuses on the five paid marketing channels, competitor sales, and calendar month.
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(lubridate)
+library(scales)
+library(broom)
+
+load("data/dt_simulated_weekly.RData")
+
+df <- dt_simulated_weekly %>%
+  arrange(DATE) %>%
+  mutate(
+    month = factor(month(DATE))
+  )
+
+marketing_channels <- c(
+  "tv_S",
+  "ooh_S",
+  "print_S",
+  "facebook_S",
+  "search_S"
+)
+
+marketing_labels <- c(
+  tv_S = "TV",
+  ooh_S = "OOH",
+  print_S = "Print",
+  facebook_S = "Facebook",
+  search_S = "Search"
+)
+```
+
+## Data Preparation
+
+The data contains 208 weekly observations covering the period from November 2015 to November 2019.
+
+The analysis uses the following marketing variables:
+
+- `tv_S`
+- `ooh_S`
+- `print_S`
+- `facebook_S`
+- `search_S`
+
+Competitor sales are included as a control variable because they represent an external business factor that is strongly associated with revenue.
+
+Calendar month is included to account for recurring seasonal patterns.
+
+```{r, echo=FALSE, message=FALSE}
+dataset_summary <- tibble(
+  observations = nrow(df),
+  variables = ncol(df),
+  start_date = min(df$DATE),
+  end_date = max(df$DATE),
+  missing_values = sum(is.na(df)),
+  duplicate_rows = sum(duplicated(df))
+)
+
+dataset_summary
+```
+
+The dataset contains **208 weekly observations** and no missing values or duplicate rows.
+
+## Exploratory Analysis
+
+### Revenue Over Time
+
+The first step is to examine how revenue changes over time.
+
+```{r, echo=FALSE}
+ggplot(
+  df,
+  aes(
+    x = DATE,
+    y = revenue
+  )
+) +
+  geom_line() +
+  scale_y_continuous(
+    labels = comma
+  ) +
+  labs(
+    x = "Date",
+    y = "Revenue"
+  ) +
+  theme_minimal()
+```
+
+Revenue shows substantial variation over time and a recurring seasonal pattern.
+
+### Marketing Spend by Channel
+
+The total marketing spend is calculated for each channel.
+
+```{r, echo=FALSE}
+spend_summary <- df %>%
+  summarise(
+    across(
+      all_of(marketing_channels),
+      sum
+    )
+  ) %>%
+  pivot_longer(
+    everything(),
+    names_to = "channel",
+    values_to = "total_spend"
+  ) %>%
+  mutate(
+    channel = recode(
+      channel,
+      !!!marketing_labels
+    ),
+    share = total_spend / sum(total_spend) * 100
+  ) %>%
+  arrange(
+    desc(total_spend)
+  )
+
+spend_summary
+```
+
+OOH accounts for the largest share of marketing spending, followed by TV and Search.
+
+However, the amount spent on a channel does not by itself indicate how effective that channel is.
+
+```{r, echo=FALSE}
+ggplot(
+  spend_summary,
+  aes(
+    x = reorder(channel, total_spend),
+    y = total_spend
+  )
+) +
+  geom_col() +
+  coord_flip() +
+  scale_y_continuous(
+    labels = comma
+  ) +
+  labs(
+    x = NULL,
+    y = "Total marketing spend"
+  ) +
+  theme_minimal()
+```
+
+### Marketing Spend and Revenue
+
+The relationship between total marketing spending and revenue is examined next.
+
+```{r, echo=FALSE}
+df <- df %>%
+  mutate(
+    total_marketing_spend =
+      tv_S +
+      ooh_S +
+      print_S +
+      facebook_S +
+      search_S
+  )
+
+ggplot(
+  df,
+  aes(
+    x = total_marketing_spend,
+    y = revenue
+  )
+) +
+  geom_point() +
+  geom_smooth(
+    method = "lm",
+    se = FALSE
+  ) +
+  scale_x_continuous(
+    labels = comma
+  ) +
+  scale_y_continuous(
+    labels = comma
+  ) +
+  labs(
+    x = "Total marketing spend",
+    y = "Revenue"
+  ) +
+  theme_minimal()
+```
+
+The relationship is positive, but this simple relationship does not account for seasonality, competitor activity, or the simultaneous use of different marketing channels.
+
+### Correlation Between Marketing Channels and Revenue
+
+```{r, echo=FALSE}
+correlation_variables <- c(
+  "revenue",
+  marketing_channels,
+  "competitor_sales_B"
+)
+
+correlation_matrix <- cor(
+  df %>%
+    select(
+      all_of(correlation_variables)
+    )
+)
+
+round(
+  correlation_matrix,
+  3
+)
+```
+
+The correlations provide an initial indication of which variables move together with revenue.
+
+The strongest individual marketing correlations with revenue are observed for Search and TV. Competitor sales have a particularly strong correlation with revenue.
+
+### Competitor Sales
+
+```{r, echo=FALSE}
+competitor_correlation <- cor(
+  df$revenue,
+  df$competitor_sales_B
+)
+
+competitor_correlation
+```
+
+The correlation between competitor sales and revenue is approximately **0.916**.
+
+```{r, echo=FALSE}
+ggplot(
+  df,
+  aes(
+    x = competitor_sales_B,
+    y = revenue
+  )
+) +
+  geom_point() +
+  geom_smooth(
+    method = "lm",
+    se = FALSE
+  ) +
+  scale_x_continuous(
+    labels = comma
+  ) +
+  scale_y_continuous(
+    labels = comma
+  ) +
+  labs(
+    x = "Competitor sales",
+    y = "Revenue"
+  ) +
+  theme_minimal()
+```
+
+The strong relationship suggests that competitor activity is an important control variable when estimating the relationship between marketing spending and revenue.
+
+### Seasonality
+
+Average revenue is compared across calendar months.
+
+```{r, echo=FALSE}
+monthly_revenue <- df %>%
+  group_by(
+    month
+  ) %>%
+  summarise(
+    average_revenue = mean(revenue),
+    .groups = "drop"
+  )
+
+monthly_revenue
+```
+
+```{r, echo=FALSE}
+ggplot(
+  monthly_revenue,
+  aes(
+    x = month,
+    y = average_revenue
+  )
+) +
+  geom_col() +
+  scale_y_continuous(
+    labels = comma
+  ) +
+  labs(
+    x = "Month",
+    y = "Average revenue"
+  ) +
+  theme_minimal()
+```
+
+Revenue varies substantially across months. The average revenue is considerably higher in the autumn and early winter than during the summer.
+
+This seasonal variation is therefore included in the regression model.
+
+## Research Question 1: Marketing Spending and Revenue
+
+### Question
+
+**How is marketing spending associated with weekly revenue after controlling for competitor activity and seasonality?**
+
+A multiple linear regression model is used to estimate the relationship between revenue and the five marketing channels.
+
+The model also includes competitor sales and calendar month as control variables.
+
+```{r, echo=FALSE}
+model_baseline <- lm(
+  revenue ~
+    tv_S +
+    ooh_S +
+    print_S +
+    facebook_S +
+    search_S +
+    competitor_sales_B +
+    month,
+  data = df
+)
+
+summary(model_baseline)
+```
+
+### Regression Results
+
+```{r, echo=FALSE}
+baseline_coefficients <- tidy(
+  model_baseline
+) %>%
+  filter(
+    term != "(Intercept)"
+  )
+
+baseline_coefficients
+```
+
+The model has an adjusted R-squared of approximately **0.87**, indicating that the included variables explain a large share of the variation in revenue in the sample.
+
+TV has a positive and statistically significant coefficient. Print is also statistically significant in the training model.
+
+OOH, Facebook, and Search are not statistically significant after controlling for the other variables and seasonality.
+
+These coefficients should be interpreted as **associations, not causal effects**.
+
+A statistically insignificant coefficient does not prove that a marketing channel has no effect on revenue.
+
+### Marketing Coefficients
+
+```{r, echo=FALSE}
+marketing_coefficients <- tidy(
+  model_baseline
+) %>%
+  filter(
+    term %in% marketing_channels
+  ) %>%
+  mutate(
+    channel = recode(
+      term,
+      !!!marketing_labels
+    )
+  )
+
+ggplot(
+  marketing_coefficients,
+  aes(
+    x = reorder(channel, estimate),
+    y = estimate
+  )
+) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    x = NULL,
+    y = "Regression coefficient"
+  ) +
+  theme_minimal()
+```
+
+The coefficients indicate how the model relates each marketing variable to revenue while holding the other variables constant.
+
+They should not be interpreted directly as ROI or return on advertising spend.
+
+## Research Question 2: Revenue Prediction
+
+### Question
+
+**How accurately can future revenue be predicted using marketing activity, competitor sales, and seasonality?**
+
+A chronological train/test split is used to evaluate out-of-sample performance.
+
+Observations before 2019 are used for training and observations from 2019 are used for testing.
+
+```{r, echo=FALSE}
+train <- df %>%
+  filter(
+    DATE < as.Date("2019-01-01")
+  )
+
+test <- df %>%
+  filter(
+    DATE >= as.Date("2019-01-01")
+  )
+
+train_test_summary <- tibble(
+  dataset = c(
+    "Training",
+    "Test"
+  ),
+  observations = c(
+    nrow(train),
+    nrow(test)
+  ),
+  start_date = c(
+    min(train$DATE),
+    min(test$DATE)
+  ),
+  end_date = c(
+    max(train$DATE),
+    max(test$DATE)
+  )
+)
+
+train_test_summary
+```
+
+The training data contains **163 observations**, while the test data contains **45 observations**.
+
+### Training Model
+
+```{r, echo=FALSE}
+model_train <- lm(
+  revenue ~
+    tv_S +
+    ooh_S +
+    print_S +
+    facebook_S +
+    search_S +
+    competitor_sales_B +
+    month,
+  data = train
+)
+
+summary(model_train)
+```
+
+### Test Set Predictions
+
+```{r, echo=FALSE}
+test <- test %>%
+  mutate(
+    predicted_revenue =
+      predict(
+        model_train,
+        newdata = test
+      )
+  )
+```
+
+### Model Performance
+
+```{r, echo=FALSE}
+MAE <- mean(
+  abs(
+    test$revenue -
+      test$predicted_revenue
+  )
+)
+
+RMSE <- sqrt(
+  mean(
+    (
+      test$revenue -
+        test$predicted_revenue
+    )^2
+  )
+)
+
+MAPE <- mean(
+  abs(
+    (
+      test$revenue -
+        test$predicted_revenue
+    ) /
+      test$revenue
+  )
+) * 100
+
+model_metrics <- tibble(
+  metric = c(
+    "MAE",
+    "RMSE",
+    "MAPE"
+  ),
+  value = c(
+    MAE,
+    RMSE,
+    MAPE
+  )
+)
+
+model_metrics
+```
+
+The model achieves a test-set **MAE of approximately 109,000**, an **RMSE of approximately 212,000**, and a **MAPE of approximately 8.31%**.
+
+The MAPE indicates that the average absolute prediction error is approximately 8.3% of actual revenue during the test period.
+
+### Actual and Predicted Revenue
+
+```{r, echo=FALSE}
+ggplot(
+  test,
+  aes(x = DATE)
+) +
+  geom_line(aes(y = revenue)) +
+  geom_line(
+    aes(y = predicted_revenue),
+    linetype = "dashed"
+  ) +
+  scale_y_continuous(labels = comma) +
+  scale_x_date(
+    breaks = as.Date(c(
+      "2019-01-01",
+      "2019-04-01",
+      "2019-07-01",
+      "2019-10-01"
+    )),
+    labels = c(
+      "Jan",
+      "Apr",
+      "Jul",
+      "Oct"
+    )
+  ) +
+  labs(
+    x = "Date",
+    y = "Revenue"
+  ) +
+  theme_minimal()
+```
+
+The model follows the overall revenue pattern reasonably well, although some individual weeks show larger prediction errors.
+
+## Alternative Model: Log Transformation
+
+A log-transformed regression model was also tested.
+
+The purpose was to examine whether modelling relative changes rather than absolute revenue changes would improve prediction.
+
+```{r, echo=FALSE}
+df_log <- df %>%
+  mutate(
+    log_revenue = log(revenue),
+    log_tv = log1p(tv_S),
+    log_ooh = log1p(ooh_S),
+    log_print = log1p(print_S),
+    log_facebook = log1p(facebook_S),
+    log_search = log1p(search_S),
+    log_competitor = log(competitor_sales_B)
+  )
+
+train_log <- df_log %>%
+  filter(
+    DATE < as.Date("2019-01-01")
+  )
+
+test_log <- df_log %>%
+  filter(
+    DATE >= as.Date("2019-01-01")
+  )
+
+model_log <- lm(
+  log_revenue ~
+    log_tv +
+    log_ooh +
+    log_print +
+    log_facebook +
+    log_search +
+    log_competitor +
+    month,
+  data = train_log
+)
+
+test_log <- test_log %>%
+  mutate(
+    predicted_log_revenue =
+      predict(
+        model_log,
+        newdata = test_log
+      ),
+    predicted_revenue_log =
+      exp(predicted_log_revenue)
+  )
+
+MAE_log <- mean(
+  abs(
+    test_log$revenue -
+      test_log$predicted_revenue_log
+  )
+)
+
+RMSE_log <- sqrt(
+  mean(
+    (
+      test_log$revenue -
+        test_log$predicted_revenue_log
+    )^2
+  )
+)
+
+MAPE_log <- mean(
+  abs(
+    (
+      test_log$revenue -
+        test_log$predicted_revenue_log
+    ) /
+      test_log$revenue
+  )
+) * 100
+```
+
+The log-transformed model achieved an MAE of approximately **127,000**, RMSE of approximately **209,000**, and MAPE of approximately **8.42%**.
+
+Compared with the baseline model, the log-transformed model has a slightly lower RMSE but worse MAE and MAPE.
+
+The baseline model is therefore preferred for prediction.
+
+## Research Question 3: Delayed Marketing Effects
+
+### Question
+
+**Do marketing activities from previous weeks improve revenue predictions?**
+
+Marketing effects may potentially continue after the week in which spending occurs.
+
+To test this, one- and two-week lags are added for each of the five marketing channels.
+
+```{r, echo=FALSE}
+df_lag <- df %>%
+  arrange(DATE) %>%
+  mutate(
+    tv_S_lag1 = lag(tv_S, 1),
+    tv_S_lag2 = lag(tv_S, 2),
+
+    ooh_S_lag1 = lag(ooh_S, 1),
+    ooh_S_lag2 = lag(ooh_S, 2),
+
+    print_S_lag1 = lag(print_S, 1),
+    print_S_lag2 = lag(print_S, 2),
+
+    facebook_S_lag1 = lag(facebook_S, 1),
+    facebook_S_lag2 = lag(facebook_S, 2),
+
+    search_S_lag1 = lag(search_S, 1),
+    search_S_lag2 = lag(search_S, 2)
+  ) %>%
+  filter(
+    !is.na(tv_S_lag2),
+    !is.na(ooh_S_lag2),
+    !is.na(print_S_lag2),
+    !is.na(facebook_S_lag2),
+    !is.na(search_S_lag2)
+  )
+
+train_lag <- df_lag %>%
+  filter(
+    DATE < as.Date("2019-01-01")
+  )
+
+test_lag <- df_lag %>%
+  filter(
+    DATE >= as.Date("2019-01-01")
+  )
+```
+
+### Lagged Regression Model
+
+```{r, echo=FALSE}
+model_lag <- lm(
+  revenue ~
+    tv_S +
+    tv_S_lag1 +
+    tv_S_lag2 +
+
+    ooh_S +
+    ooh_S_lag1 +
+    ooh_S_lag2 +
+
+    print_S +
+    print_S_lag1 +
+    print_S_lag2 +
+
+    facebook_S +
+    facebook_S_lag1 +
+    facebook_S_lag2 +
+
+    search_S +
+    search_S_lag1 +
+    search_S_lag2 +
+
+    competitor_sales_B +
+    month,
+  data = train_lag
+)
+
+test_lag <- test_lag %>%
+  mutate(
+    predicted_revenue_lag =
+      predict(
+        model_lag,
+        newdata = test_lag
+      )
+  )
+
+MAE_lag <- mean(
+  abs(
+    test_lag$revenue -
+      test_lag$predicted_revenue_lag
+  )
+)
+
+RMSE_lag <- sqrt(
+  mean(
+    (
+      test_lag$revenue -
+        test_lag$predicted_revenue_lag
+    )^2
+  )
+)
+
+MAPE_lag <- mean(
+  abs(
+    (
+      test_lag$revenue -
+        test_lag$predicted_revenue_lag
+    ) /
+      test_lag$revenue
+  )
+) * 100
+```
+
+### Model Comparison
+
+```{r, echo=FALSE}
+model_comparison <- tibble(
+  model = c(
+    "Baseline linear regression",
+    "Log-transformed regression",
+    "Lagged marketing regression"
+  ),
+  MAE = c(
+    MAE,
+    MAE_log,
+    MAE_lag
+  ),
+  RMSE = c(
+    RMSE,
+    RMSE_log,
+    RMSE_lag
+  ),
+  MAPE = c(
+    MAPE,
+    MAPE_log,
+    MAPE_lag
+  )
+)
+
+model_comparison
+```
+
+The lagged model achieves an MAE of **136,421**, an RMSE of **225,036**, and a MAPE of **9.85%**.
+
+This is worse than the baseline model, which achieves an MAE of **109,102**, an RMSE of **211,576**, and a MAPE of **8.31%**.
+
+The lagged model therefore does not improve out-of-sample prediction.
+
+### Conclusion
+
+The results suggest that adding one- and two-week marketing lags does not improve revenue prediction in this dataset.
+
+The simpler baseline model is therefore retained.
+
+This is an important modelling result because adding more variables does not automatically improve predictive performance.
+
+## Final Model
+
+Based on the holdout-period results, the baseline linear regression is selected as the final model.
+
+The final model is:
+
+``` text
+Revenue ~ TV + OOH + Print + Facebook + Search
+          + Competitor Sales + Month
+```
+
+The model is preferred because it provides the best overall predictive performance while remaining relatively simple and interpretable.
+
+## Business Insights
+
+### TV
+
+TV has the strongest statistical relationship with revenue among the marketing variables in the final model.
+
+However, the regression coefficient should not be interpreted as a causal return on TV spending.
+
+### Competitor Activity
+
+Competitor sales have a very strong relationship with revenue.
+
+This suggests that broader market conditions are important when evaluating marketing performance.
+
+### Seasonality
+
+Revenue varies substantially across calendar months.
+
+Accounting for seasonality prevents recurring seasonal patterns from being attributed entirely to marketing activity.
+
+### Marketing Spend and Effectiveness
+
+OOH accounts for the largest share of marketing spending, but its coefficient is not statistically significant in the baseline regression.
+
+This illustrates why spending volume alone should not be used to evaluate marketing effectiveness.
+
+### Model Complexity
+
+The lagged model introduced ten additional marketing variables but produced worse predictions.
+
+The results therefore support using the simpler model for this analysis.
+
+## Limitations
+
+### Correlation is Not Causation
+
+The regression estimates associations between variables. It does not establish that changes in marketing spending cause changes in revenue.
+
+### Simulated Data
+
+The dataset is simulated. The results should therefore not be presented as evidence about the real-world effectiveness of any specific marketing channel.
+
+### Limited Model Structure
+
+The model does not explicitly account for:
+
+- adstock
+- saturation
+- diminishing returns
+- carryover effects
+- interaction effects
+
+A full Marketing Mix Model could incorporate these effects.
+
+### Multicollinearity
+
+Marketing channels may be correlated with each other and with broader business conditions. This can make individual coefficients difficult to interpret.
+
+### Predictive Rather Than Causal Objective
+
+The main objective of this project is predictive modelling and business interpretation rather than causal inference.
+
+## Conclusion
+
+This project demonstrates a practical regression-based approach to marketing analytics.
+
+The analysis combines exploratory data analysis, seasonality, competitor activity, multiple linear regression, chronological train/test validation, log transformation, and lagged marketing variables.
+
+The final model achieved a test-set MAPE of approximately **8.31%**.
+
+The lagged model performed worse than the simpler baseline model, showing that additional model complexity did not improve predictive performance.
+
+The main takeaway is that marketing analytics should consider marketing channels together with seasonality and broader business drivers rather than relying on simple spend-versus-revenue comparisons.
+
+For a production marketing analytics project, the next step would be to use real business data and develop a more advanced Marketing Mix Modeling approach that accounts for carryover effects, saturation, and causal validation.
