@@ -147,6 +147,7 @@ marketing-performance-analysis/
 ├── marketing_analysis.html
 ├── marketing_analysis.md
 └── README.md
+```
 
 ## Author
 
