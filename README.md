@@ -1,98 +1,78 @@
 # Marketing Performance Analysis
 
-This project analyzes the relationship between marketing spending and weekly revenue using simulated business data.
+## Overview
 
-The analysis focuses on understanding marketing performance, accounting for seasonality, predicting revenue, and evaluating whether delayed marketing effects improve model performance.
+This project analyzes the relationship between marketing spending and weekly revenue using Meta's simulated weekly marketing dataset.
 
-## Objectives
+The analysis focuses on marketing performance, revenue prediction, seasonality, and whether delayed marketing effects improve model performance.
 
-The main objectives of the analysis are:
+The project uses R and Quarto and combines exploratory data analysis, data visualization, regression modelling, out-of-sample prediction, and model comparison.
 
-- Examine the relationship between marketing spending and revenue
-- Compare marketing channels using regression models
-- Account for seasonal revenue patterns
-- Build a revenue prediction model
-- Evaluate model performance on unseen data
-- Test whether 1- and 2-week marketing lags improve predictions
-- Compare linear and log-transformed regression models
+## Research Questions
 
-## Data
+### 1. Marketing Spending and Revenue
 
-The project uses Meta's simulated weekly marketing dataset.
+**How is marketing spending associated with weekly revenue after accounting for competitor activity and seasonality?**
 
-The dataset contains weekly observations of:
+The analysis examines:
 
-- Revenue
-- TV spending
-- OOH spending
-- Print spending
-- Facebook spending
-- Search spending
-- Competitor sales
-- Newsletter activity
-- Events
+- total marketing spending by channel
+- the distribution of marketing investment across channels
+- correlations between marketing channels and revenue
+- the relationship between competitor sales and revenue
+- regression estimates for individual marketing channels
+- the role of seasonal revenue patterns
 
-The dataset contains 208 weekly observations covering the period from November 2015 to November 2019.
+### 2. Revenue Prediction
 
-The dataset is available from the official Meta Robyn repository:
+**How accurately can weekly revenue be predicted using marketing spending, competitor activity, and seasonality?**
 
-[Meta Robyn – Simulated Weekly Dataset](https://github.com/facebookexperimental/Robyn/blob/main/R/inst/extdata/dt_simulated_weekly.RData)
+The analysis examines:
 
-## Analysis
+- training and test set performance
+- out-of-sample revenue predictions
+- prediction errors
+- MAE, RMSE, and MAPE
+- actual versus predicted revenue
+- model diagnostics
 
-The analysis consists of several stages:
+### 3. Delayed Marketing Effects
 
-### 1. Exploratory Data Analysis
+**Do 1- and 2-week marketing spending lags improve revenue predictions?**
 
-The project examines:
+The analysis examines:
 
-- Revenue trends over time
-- Marketing spending by channel
-- Marketing spend distribution
-- Correlations between marketing channels and revenue
-- Competitor sales
-- Revenue seasonality
+- current-week marketing spending
+- one-week marketing lags
+- two-week marketing lags
+- whether lagged models improve predictive performance
+- comparison between the baseline and lagged models
 
-### 2. Regression Analysis
+## Key Findings
 
-A multiple linear regression model is used to estimate the relationship between revenue and:
+### Marketing Spending and Revenue
 
-- TV spending
-- OOH spending
-- Print spending
-- Facebook spending
-- Search spending
-- Competitor sales
-- Calendar month
+[svg]
 
-The regression model is used as an interpretable baseline for understanding the data.
+The regression analysis shows that marketing channels have different statistical associations with weekly revenue after controlling for competitor sales and calendar month.
 
-### 3. Revenue Prediction
+TV spending shows the strongest statistical association among the marketing channels included in the model.
 
-The data is divided into training and test sets.
+Print spending also shows a statistically significant positive association, while OOH, Facebook, and Search spending are not statistically significant in the baseline model.
 
-The model is trained using data from 2015–2018 and evaluated on unseen data from 2019.
+Competitor sales are strongly associated with revenue and are therefore included as a control variable rather than treated as a marketing channel.
 
-The following metrics are used:
+These results describe model-based associations and should not be interpreted as causal ROI or ROAS estimates.
 
-- Mean Absolute Error (MAE)
-- Root Mean Squared Error (RMSE)
-- Mean Absolute Percentage Error (MAPE)
+### Revenue Prediction
 
-### 4. Alternative Models
+[svg]
 
-Two alternative approaches are evaluated:
+The baseline linear regression explains approximately **87% of the variation in revenue** in the training data.
 
-- Log-transformed regression
-- Regression models including 1- and 2-week marketing lags
+The model is evaluated on a separate test set covering 2019.
 
-The models are compared using the same test set.
-
-## Key Results
-
-The baseline linear regression explains approximately 87% of the variation in revenue on the training data.
-
-On the test set, the baseline model achieved:
+Test-set performance:
 
 | Metric | Result |
 |---|---:|
@@ -100,55 +80,142 @@ On the test set, the baseline model achieved:
 | RMSE | €211,576 |
 | MAPE | 8.31% |
 
-The baseline linear regression performed better overall than the log-transformed and lagged models based on test-set MAE and MAPE.
+The model therefore predicts weekly revenue with an average percentage error of approximately **8.3%** on the test data.
 
-The regression results also show a strong statistical association between TV spending and revenue after controlling for the other variables in the model.
+### Delayed Marketing Effects
 
-Competitor sales were strongly associated with revenue and were therefore included as a control variable rather than treated as a marketing channel.
+[svg]
 
-## Business Interpretation
+Adding 1- and 2-week marketing spending lags did not improve predictive performance.
 
-The analysis demonstrates how marketing analytics can be used to:
+The baseline model achieved:
 
-- Identify relationships between marketing investment and revenue
-- Account for seasonality and competitor activity
-- Compare marketing channels
-- Build revenue prediction models
-- Evaluate model performance using unseen data
-- Support data-driven marketing decisions
+- MAE: **€109,102**
+- RMSE: **€211,576**
+- MAPE: **8.31%**
 
-The regression coefficients provide model-based estimates of associations between marketing spending and revenue. They should not be interpreted directly as causal ROI or ROAS estimates without additional causal validation.
+The lagged model achieved:
+
+- MAE: **€136,421**
+- RMSE: **€225,036**
+- MAPE: **9.85%**
+
+The simpler baseline model therefore performed better on all three evaluation metrics.
+
+This suggests that, for this dataset and model specification, adding simple one- and two-week marketing lags does not improve out-of-sample revenue prediction.
+
+## Data
+
+The project uses Meta's simulated weekly marketing dataset.
+
+The dataset contains 208 weekly observations covering the period from November 2015 to November 2019.
+
+Variables include:
+
+- revenue
+- TV spending
+- OOH spending
+- Print spending
+- Facebook spending
+- Search spending
+- competitor sales
+- newsletter activity
+- events
+
+The raw dataset is **not included in this repository**.
+
+The dataset is available from the official Meta Robyn repository:
+
+[Meta Robyn – Simulated Weekly Dataset](https://github.com/facebookexperimental/Robyn/blob/main/R/inst/extdata/dt_simulated_weekly.RData)
+
+## Data Preparation
+
+The data was checked for:
+
+- missing values
+- duplicate observations
+- date range
+- variable types
+- marketing spending levels
+- seasonal patterns
+
+Calendar month was included in the regression models to account for recurring seasonal differences in revenue.
+
+Events were not included in the main regression model because only two event observations were present in the dataset.
+
+Competitor sales were included as a control variable because they show a strong relationship with revenue.
+
+## Methods
+
+The project uses:
+
+- descriptive statistics
+- data visualization
+- correlation analysis
+- seasonality analysis
+- multiple linear regression
+- train/test split
+- out-of-sample prediction
+- log-transformed regression
+- lagged regression
+- MAE
+- RMSE
+- MAPE
+
+The training data consists of observations from 2015–2018, while the 2019 observations are used as the test set.
+
+## Tools
+
+- R
+- Quarto
+- tidyverse
+- dplyr
+- ggplot2
+- lubridate
+- broom
+
+## Project Files
+
+### `marketing_analysis.qmd`
+
+The original Quarto source file containing the analysis code and written interpretation.
+
+### `marketing_analysis.md`
+
+The rendered Markdown version of the complete analysis, including results, tables, visualizations, and interpretations.
+
+### `marketing_analysis_files/`
+
+Supporting files generated by Quarto for the rendered analysis.
+
+## Full Analysis
+
+The complete rendered analysis is available here:
+
+[View the full analysis](marketing_analysis.md)
+
+The original Quarto source code is available here:
+
+[View the Quarto source](marketing_analysis.qmd)
 
 ## Limitations
 
 This project uses simulated data and therefore does not represent the performance of a real company's marketing channels.
 
-The regression approach also has limitations when estimating causal marketing effects. Marketing channels may have carryover effects, diminishing returns, and interactions that are not fully captured by the baseline model.
+The regression models describe statistical associations rather than causal marketing effects.
 
-The dataset also contains only a small number of observed event occurrences, so events were not included in the main regression model.
+Marketing channels may also have carryover effects, diminishing returns, and interactions that are not fully captured by the models used in this analysis.
+
+The lag analysis only tests simple one- and two-week delays and therefore does not provide a complete estimate of marketing carryover effects.
 
 For a production marketing analytics project, this analysis could be extended using real business data and a more advanced Marketing Mix Modeling framework to account for carryover effects, saturation, and causal validation.
 
-## Tools
+## Conclusion
 
-- R
-- tidyverse
-- ggplot2
-- lubridate
-- broom
-- Quarto
+The analysis provides three perspectives on marketing performance: marketing spending and revenue, revenue prediction, and delayed marketing effects.
 
-## Project Structure
+TV spending shows the strongest statistical association among the marketing channels in the regression model, while competitor sales have a particularly strong relationship with revenue.
 
-```text
-marketing-performance-analysis/
-│
-├── marketing_analysis.qmd
-├── marketing_analysis.html
-├── marketing_analysis.md
-└── README.md
-```
+The baseline linear regression achieves an MAPE of approximately **8.3%** on the test set and performs better than the tested log-transformed and lagged alternatives.
 
-## Author
-
-Eetu Tammi
+Overall, the project demonstrates how regression-based marketing analytics can be used to investigate marketing performance, build revenue predictions, and evaluate alternative model specifications using out-of-sample data.
